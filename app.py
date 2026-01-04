@@ -97,10 +97,12 @@ def call_deepseek_audit(api_key, bond_info, template_text, target_text):
 # ==========================================
 st.set_page_config(layout="wide", page_title="债券公告审核系统")
 
+wst.set_page_config(layout="wide", page_title="债券公告审核系统")
+
 with st.sidebar:
     st.title("🐋 智能审核系统")
 
-    # API Key (防崩溃版)
+    # --- API Key ---
     api_key = None
     try:
         if "DEEPSEEK_API_KEY" in st.secrets:
@@ -108,70 +110,94 @@ with st.sidebar:
             st.success("✅ 云端 Key 已连接")
     except:
         pass
-
     if not api_key:
         api_key = st.text_input("DeepSeek API Key", type="password")
 
     st.markdown("---")
-    st.subheader("1. 债券数据库")
+    st.subheader("1. 债券数据库管理")
 
-    # 自动加载 data.xlsx
+    # --- 逻辑修改：先尝试自动加载，但允许随时覆盖 ---
+
+    # 如果 Session 为空，才去尝试自动加载一次
     if st.session_state['db_data'] is None:
         try:
-            # 优先尝试 openpyxl
             try:
+                # 优先尝试 Excel
                 df_local = pd.read_excel(DEFAULT_DB_FILE, engine='openpyxl')
             except:
+                # 其次尝试 CSV
                 df_local = pd.read_csv(DEFAULT_DB_FILE)
 
             df_local = df_local.astype(str)
             st.session_state['db_data'] = df_local
-            st.info(f"📂 已内置加载: {DEFAULT_DB_FILE}")
+            # 存一个标记，告诉界面这是内置数据
+            st.session_state['data_source'] = f"📂 内置: {DEFAULT_DB_FILE}"
         except:
-            pass
+            st.session_state['data_source'] = "无数据"
 
+    # 显示当前状态
     if st.session_state['db_data'] is not None:
-        st.success(f"✅ 包含 {len(st.session_state['db_data'])} 条数据")
+        st.success(f"✅ 当前数据源: {st.session_state.get('data_source', '未知')}")
+        st.caption(f"包含记录: {len(st.session_state['db_data'])} 条")
     else:
-        st.warning("⚠️ 请上传数据库")
+        st.warning("⚠️ 暂无数据")
+
+    # === 关键修改：上传按钮永远显示，用于覆盖更新 ===
+    uploaded_db = st.file_uploader("📤 上传新表以更新/覆盖", type=['xlsx', 'csv'])
+
+    if uploaded_db:
+        try:
+            if uploaded_db.name.endswith('.csv'):
+                df_new = pd.read_csv(uploaded_db)
+            else:
+                df_new = pd.read_excel(uploaded_db, engine='openpyxl')
+
+            # 更新 Session
+            st.session_state['db_data'] = df_new.astype(str)
+            st.session_state['data_source'] = f"📄 上传: {uploaded_db.name}"
+            st.success("数据库已更新！")
+            # 强制刷新页面以应用新数据
+            st.rerun()
+        except Exception as e:
+            st.error(f"读取失败: {e}")
 
     st.markdown("---")
     st.subheader("2. 模板库管理")
 
-    # === 核心修改：自动扫描 templates 文件夹 ===
+    # 自动扫描 (逻辑不变)
     if not st.session_state['templates']:
         if os.path.exists(TEMPLATE_DIR):
             files = os.listdir(TEMPLATE_DIR)
-            loaded_count = 0
             for f_name in files:
-                # 排除临时文件
-                if f_name.startswith("~") or f_name.startswith("."):
-                    continue
-
+                if f_name.startswith("~") or f_name.startswith("."): continue
                 full_path = os.path.join(TEMPLATE_DIR, f_name)
-
-                # 读取本地文件内容
                 try:
-                    # 'rb' 模式读取二进制，兼容 PDF/Docx
                     with open(full_path, "rb") as f:
                         content = extract_text_from_file(f, f_name)
-                        if content:
-                            st.session_state['templates'][f_name] = content
-                            loaded_count += 1
-                except Exception as e:
-                    print(f"模板 {f_name} 加载失败: {e}")
-
-            if loaded_count > 0:
-                st.info(f"📂 已自动加载 {loaded_count} 个内置模板")
+                        if content: st.session_state['templates'][f_name] = content
+                except: pass
 
     # 显示现有模板
     tpl_keys = list(st.session_state['templates'].keys())
     if tpl_keys:
-        st.write("📚 当前可用模板：")
-        for k in tpl_keys:
-            st.caption(f"📄 {k}")
+        st.write(f"📚 当前可用模板 ({len(tpl_keys)}个)：")
+        # 用 expander 折叠一下，防止列表太长
+        with st.expander("点击查看列表"):
+            for k in tpl_keys:
+                st.caption(f"📄 {k}")
     else:
         st.warning("⚠️ 暂无模板")
+
+    # === 关键修改：添加模板永远可用 ===
+    st.caption("需要增加新模板？")
+    with st.popover("➕ 上传新模板"):
+        name = st.text_input("模板名称", placeholder="例如: 2026新规模板")
+        file = st.file_uploader("文件", type=['txt', 'pdf', 'docx'])
+        if st.button("确认添加"):
+            if name and file:
+                st.session_state['templates'][name] = extract_text_from_file(file, file.name)
+                st.success(f"已添加: {name}")
+                st.rerun()
 
 # ==========================================
 # 2. 主界面
