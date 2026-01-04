@@ -97,7 +97,7 @@ def call_deepseek_audit(api_key, bond_info, template_text, target_text):
 # ==========================================
 st.set_page_config(layout="wide", page_title="债券公告审核系统")
 
-wst.set_page_config(layout="wide", page_title="债券公告审核系统")
+st.set_page_config(layout="wide", page_title="债券公告审核系统")
 
 with st.sidebar:
     st.title("🐋 智能审核系统")
@@ -242,3 +242,4 @@ if st.button("🚀 开始审核", type="primary"):
             res = call_deepseek_audit(api_key, str(bond_row), tpl_content, target_text)
         st.success("完成！")
         st.markdown(res)
+
